@@ -1,0 +1,409 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import math
+import calendar
+from datetime import datetime
+
+# --- DATOS DE BANCOS CON TASAS Y REQUISITOS ---
+TASAS_BANCOS = {
+    "banco de occidente": {
+        "consumo": {"tasa_ea": 25.01, "plazo_max": 72},
+        "vivienda": {"tasa_ea": 18.0, "plazo_max": 240},
+        "vehiculo": {"tasa_ea": 25.01, "plazo_max": 84},
+    },
+    "banco de bogotá": {
+        "consumo": {"tasa_ea": 25.34, "plazo_max": 60},
+        "vivienda": {"tasa_ea": 10.25, "plazo_max": 240},
+        "estudio": {"tasa_ea": 14.40, "plazo_max": 120},
+        "vehiculo": {"tasa_ea": 25.0, "plazo_max": 84}
+    },
+    "bancolombia": {
+        "consumo": {"tasa_ea": 24.99, "plazo_max": 60},
+        "vivienda": {"tasa_ea": 16.50, "plazo_max": 240},
+        "estudio": {"tasa_ea": 22.56, "plazo_max": 120},
+        "vehiculo": {"tasa_ea": 25.0, "plazo_max": 84}
+    },
+    "bbva": {
+        "consumo": {"tasa_ea": 25.01, "plazo_max": 72},
+        "vivienda": {"tasa_ea": 12.63, "plazo_max": 240},
+        "vehiculo": {"tasa_ea": 15.49, "plazo_max": 84},
+    }
+}
+
+REQUISITOS_BANCOS = {
+    "banco de occidente": {
+        "consumo": {"edad_min": 23, "edad_max": 74, "ingreso_min_smmlv": 2.2, "experiencia_min_meses": 6},
+        "vivienda": {"edad_min": 18, "edad_max": 74, "ingreso_min": 2600000, "experiencia_min_meses": 6},
+        "vehiculo": {"edad_min": 18, "edad_max": 74, "ingreso_min_smmlv": 2.5, "experiencia_min_meses": 6}
+    },
+    "banco de bogotá": {
+        "consumo": {"edad_min": 18, "edad_max": 74, "ingreso_min_smmlv": 2.0},
+        "vivienda": {"edad_min": 18, "edad_max": 74, "ingreso_min_smmlv": 2.0},
+        "estudio": {"edad_min": 18, "edad_max": 74, "ingreso_min_smmlv": 1.5},
+        "vehiculo": {"edad_min": 18, "edad_max": 74, "ingreso_min_smmlv": 2.0}
+    },
+    "bancolombia": {
+        "consumo": {"edad_min": 18, "edad_max": 74, "ingreso_min_smmlv": 1.5},
+        "vivienda": {"edad_min": 18, "edad_max": 74, "ingreso_min_smmlv": 2.0},
+        "estudio": {"edad_min": 18, "edad_max": 74, "ingreso_min_smmlv": 1.0},
+        "vehiculo": {"edad_min": 18, "edad_max": 74, "ingreso_min_smmlv": 2.0}
+    },
+    "bbva": {
+        "consumo": {"edad_min": 25, "edad_max": 62, "ingreso_min": 3000000},
+        "vivienda": {"edad_min": 18, "edad_max": 74, "ingreso_min_vis": 6000000, "ingreso_min_novis": 15000000},
+        "vehiculo": {"edad_min": 18, "edad_max": 74, "ingreso_min_smmlv": 2.0}
+    }
+}
+# --- FIN DE DATOS DE BANCOS CON TASAS Y REQUISITOS ---
+
+SALARIO_MINIMO = 1423500  # Salario mínimo Colombia 2025
+
+def convertir_tasa(tasa_input: float, periodo_input: str, tipo_tasa: str, periodo_objetivo: str = 'mensual') -> float:
+    tasa = tasa_input / 100.0
+    periodo_input = periodo_input.lower()
+    tipo_tasa = tipo_tasa.lower()
+    if tipo_tasa == 'efectiva':
+        if periodo_input == 'anual':
+            tasa_anual_efectiva = tasa
+        elif periodo_input == 'mensual':
+            tasa_anual_efectiva = (1 + tasa) ** 12 - 1
+        else:
+            raise ValueError("periodo_input debe ser 'anual' o 'mensual'")
+    elif tipo_tasa == 'nominal':
+        m = 12
+        if periodo_input == 'anual':
+            tasa_anual_efectiva = (1 + tasa / m) ** m - 1
+        elif periodo_input == 'mensual':
+            tasa_anual_efectiva = (1 + tasa) ** 12 - 1
+        else:
+            raise ValueError("periodo_input debe ser 'anual' o 'mensual'")
+    else:
+        raise ValueError("tipo_tasa debe ser 'efectiva' o 'nominal'")
+
+    if periodo_objetivo.lower() == 'mensual':
+        return (1 + tasa_anual_efectiva) ** (1 / 12) - 1
+    elif periodo_objetivo.lower() == 'anual':
+        return tasa_anual_efectiva
+    else:
+        raise ValueError("periodo_objetivo debe ser 'mensual' o 'anual'")
+
+def cuota_annuity(loan_amount: float, tasa_periodica: float, n_periodos: int) -> float:
+    if n_periodos <= 0:
+        raise ValueError("n_periodos debe ser mayor que 0")
+    if abs(tasa_periodica) < 1e-15:
+        return loan_amount / n_periodos
+    i = tasa_periodica
+    return loan_amount * (i * (1 + i) ** n_periodos) / ((1 + i) ** n_periodos - 1)
+
+def monto_maximo_prestamo(cuota_max: float, tasa_periodica: float, n_periodos: int) -> float:
+    if abs(tasa_periodica) < 1e-15:
+        return cuota_max * n_periodos
+    i = tasa_periodica
+    return cuota_max * ((1 + i) ** n_periodos - 1) / (i * (1 + i) ** n_periodos)
+
+def add_months(fecha: datetime, months: int = 1) -> datetime:
+    month = fecha.month - 1 + months
+    year = fecha.year + month // 12
+    month = month % 12 + 1
+    day = min(fecha.day, calendar.monthrange(year, month)[1])
+    return fecha.replace(year=year, month=month, day=day)
+
+def generar_tabla_amortizacion(loan_amount: float, tasa_periodica: float, n_periodos: int, cuota: float, fecha_inicio: datetime = None):
+    if fecha_inicio is None:
+        fecha = datetime.today()
+    else:
+        fecha = fecha_inicio
+    saldo = float(loan_amount)
+    tabla = []
+    for p in range(1, n_periodos + 1):
+        interes = saldo * tasa_periodica
+        amortizacion = cuota - interes
+        if amortizacion >= saldo - 1e-8 or p == n_periodos:
+            amortizacion = saldo
+            cuota_real = interes + amortizacion
+        else:
+            cuota_real = cuota
+        saldo = saldo - amortizacion
+        saldo = max(saldo, 0.0)
+        entrada = {
+            'periodo': p,
+            'fecha': fecha.strftime('%Y-%m-%d'),
+            'pago': round(cuota_real, 2),
+            'interes': round(interes, 2),
+            'amortizacion': round(amortizacion, 2),
+            'saldo': round(saldo, 2)
+        }
+        tabla.append(entrada)
+        fecha = add_months(fecha, 1)
+    return tabla
+
+def imprimir_resumen(loan_amount, cuota, n_periodos, tasa_periodica, tipo_credito):
+    total_pagos = cuota * n_periodos
+    total_interes = total_pagos - loan_amount
+    print('=' * 80)
+    print('RESUMEN DEL CRÉDITO'.center(80))
+    print('=' * 80)
+    print(f'Tipo de crédito: {tipo_credito.capitalize()}')
+    print(f'Monto del crédito: {loan_amount:,.2f}')
+    print(f'Número de períodos: {n_periodos}')
+    print(f'Tasa periódica (mensual): {tasa_periodica * 100:.6f} %')
+    print(f'Cuota por período: {cuota:,.2f}')
+    print(f'Total pagado: {total_pagos:,.2f}')
+    print(f'Total intereses: {total_interes:,.2f}')
+    print('=' * 80)
+
+def mostrar_tabla(tabla):
+    print("\n" + "=" * 110)
+    print("TABLA DE AMORTIZACIÓN".center(110))
+    print("=" * 110)
+    encabezado = f"{'Período':<8} | {'Fecha':<12} | {'Pago':>15} | {'Interés':>15} | {'Amortización':>15} | {'Saldo':>18}"
+    print(encabezado)
+    print("-" * 110)
+    for row in tabla:
+        print(
+            f"{row['periodo']:<8} | "
+            f"{row['fecha']:<12} | "
+            f"{row['pago']:>15,.2f} | "
+            f"{row['interes']:>15,.2f} | "
+            f"{row['amortizacion']:>15,.2f} | "
+            f"{row['saldo']:>18,.2f}"
+        )
+    print("=" * 110)
+
+def calcular_dti(salario_mensual: float, gastos: float, deudas: float, cuotas_nuevas: float) -> dict:
+    ingreso = salario_mensual
+    deuda_total = gastos + deudas + cuotas_nuevas
+    dti = deuda_total / ingreso if ingreso > 0 else float('inf')
+    disponible = ingreso - deuda_total
+    return {
+        'ingreso_mensual': ingreso,
+        'deuda_total_mensual': deuda_total,
+        'dti': dti,
+        'disponible': disponible
+    }
+
+def pedir_float(prompt, default=None):
+    while True:
+        try:
+            entrada = input(prompt + (f' [{default}]' if default is not None else '') + ': ')
+            if entrada.strip() == '' and default is not None:
+                return float(default)
+            return float(entrada)
+        except ValueError:
+            print('Entrada inválida. Ingresa un número.')
+
+def main():
+    try:
+        print('\n=== Simulación de Crédito ===\n')
+        tipo_persona = input("¿Eres persona 'natural' o 'juridica'? [natural]: ") or 'natural'
+        
+        # Recolección de datos
+        edad = int(pedir_float("Ingresa tu edad", 25))
+        if edad < 18:
+            print("\n❌ No se puede otorgar el crédito: eres menor de edad.")
+            return
+
+        if tipo_persona.lower() == 'natural':
+            nombre = input("Ingresa tu nombre completo: ")
+            print(f"\n✅ Bienvenido {nombre}, continuemos con la simulación...\n")
+            tipo_empleo = input("¿Eres 'asalariado', 'pensionado' o 'independiente'? [asalariado]: ") or 'asalariado'
+            print(f"Tipo de empleo seleccionado: {tipo_empleo.capitalize()}")
+            estado_civil = input("¿Cuál es tu estado civil? ('soltero', 'casado', 'union libre'): ") or 'soltero'
+            print(f"Estado civil seleccionado: {estado_civil.capitalize()}")
+            experiencia = 0
+            if tipo_empleo.lower() in ['asalariado', 'independiente']:
+                experiencia = pedir_float("¿Cuántos meses de experiencia laboral tienes en tu empleo/actividad actual? [12]: ", 12)
+                print(f"Experiencia laboral: {int(experiencia)} meses")
+            ingresos = pedir_float('Salario mensual', 2000000)
+            patrimonio = 0
+        else:
+            razon_social = input("Ingresa la razón social de la empresa: ")
+            print(f"\n✅ Empresa '{razon_social}' registrada, continuemos con la simulación...\n")
+            ingresos = pedir_float('Flujo de caja mensual', 5000000)
+            patrimonio = pedir_float('Patrimonio total', 50000000)
+
+        loan_amount = pedir_float('Valor del crédito (monto del préstamo)', 10000000)
+        unidad_plazo = input("El plazo lo darás en 'años' o 'meses'? [años]: ") or 'años'
+        if unidad_plazo.lower().startswith('a'):
+            plazo_anios = int(pedir_float('Plazo en años', 5))
+            n_periodos = plazo_anios * 12
+        else:
+            n_periodos = int(pedir_float('Plazo en meses', 60))
+
+        tipo_credito = input("Tipo de crédito ('vivienda', 'vehiculo', 'consumo', 'estudio') [consumo]: ") or 'consumo'
+        
+        # Gastos
+        gasto_vivienda = pedir_float('Gasto mensual en vivienda (arriendo/hipoteca)', 400000)
+        gasto_agua = pedir_float('Gasto mensual en agua', 60000)
+        gasto_luz = pedir_float('Gasto mensual en luz', 80000)
+        gasto_gas = pedir_float('Gasto mensual en gas', 50000)
+        gasto_internet = pedir_float('Gasto mensual en internet', 70000)
+        gasto_alimentacion = pedir_float('Gasto mensual en alimentación', 200000)
+        gastos_totales = gasto_vivienda + gasto_agua + gasto_luz + gasto_gas + gasto_internet + gasto_alimentacion
+
+        # Deudas
+        deuda_hipoteca = pedir_float('Pago mensual de hipoteca', 200000)
+        deuda_tarjetas = pedir_float('Pago mensual de tarjetas de crédito', 150000)
+        deuda_otros = pedir_float('Pago mensual de otros créditos', 100000)
+        deudas_totales = deuda_hipoteca + deuda_tarjetas + deuda_otros
+        disponible_para_cuotas = ingresos - gastos_totales - deudas_totales
+
+        # --- SECCIÓN DE SELECCIÓN DE COMPARACIÓN ---
+        print("\n" + "=" * 80)
+        opcion_comparacion = input("¿Deseas una 'comparacion automatica' o una 'simulacion manual' de un banco? [automatica]: ") or 'automatica'
+        print("=" * 80)
+        
+        opciones_disponibles_para_tabla = {}
+        tasa_seleccionada = None
+        plazo_seleccionado = None
+        cuota_seleccionada = None
+        banco_seleccionado_para_resumen = None
+        
+        if opcion_comparacion.lower().startswith('a'):
+            # Lógica de comparación automática
+            print("COMPARACIÓN DE OPCIONES DE CRÉDITO POR BANCO".center(80))
+            print("=" * 80)
+            mejor_cuota = float('inf')
+            mejor_banco = None
+
+            for banco, datos_banco in TASAS_BANCOS.items():
+                if tipo_credito in datos_banco:
+                    tasa_ea = datos_banco[tipo_credito]['tasa_ea']
+                    plazo_max_banco = datos_banco[tipo_credito]['plazo_max']
+                    requisitos = REQUISITOS_BANCOS[banco].get(tipo_credito, {})
+                    
+                    cumple_requisitos = True
+                    razones_no_cumple = []
+                    
+                    if tipo_persona.lower() == 'natural':
+                        if 'edad_min' in requisitos and edad < requisitos['edad_min']:
+                            cumple_requisitos = False
+                            razones_no_cumple.append(f"Edad mínima ({requisitos['edad_min']} años)")
+                        if 'edad_max' in requisitos and edad > requisitos['edad_max']:
+                            cumple_requisitos = False
+                            razones_no_cumple.append(f"Edad máxima ({requisitos['edad_max']} años)")
+                        if 'ingreso_min' in requisitos and ingresos < requisitos['ingreso_min']:
+                            cumple_requisitos = False
+                            razones_no_cumple.append(f"Ingreso mínimo (${requisitos['ingreso_min']:,.2f})")
+                        if 'ingreso_min_smmlv' in requisitos and ingresos < requisitos['ingreso_min_smmlv'] * SALARIO_MINIMO:
+                            cumple_requisitos = False
+                            razones_no_cumple.append(f"Ingreso mínimo ({requisitos['ingreso_min_smmlv']} SMMLV)")
+                        if 'experiencia_min_meses' in requisitos and experiencia < requisitos['experiencia_min_meses']:
+                            cumple_requisitos = False
+                            razones_no_cumple.append(f"Experiencia laboral mínima ({requisitos['experiencia_min_meses']} meses)")
+                    
+                    print(f"Banco: {banco.title()}")
+                    
+                    if not cumple_requisitos:
+                        print("  ❌ No cumples con los siguientes requisitos:")
+                        for razon in razones_no_cumple:
+                            print(f"    - {razon}")
+                        print("-" * 40)
+                        continue
+
+                    plazo_credito_meses = min(n_periodos, plazo_max_banco)
+                    
+                    tasa_mensual = convertir_tasa(tasa_ea, 'anual', 'efectiva')
+                    cuota_calculada = cuota_annuity(loan_amount, tasa_mensual, plazo_credito_meses)
+                    
+                    if cuota_calculada < disponible_para_cuotas:
+                        opciones_disponibles_para_tabla[banco] = {
+                            'cuota': cuota_calculada,
+                            'tasa_anual': tasa_ea,
+                            'plazo_meses': plazo_credito_meses
+                        }
+                        print("  ✅ Cumples con los requisitos")
+                        print(f"  Tasa Efectiva Anual: {tasa_ea:.2f}%")
+                        print(f"  Plazo: {plazo_credito_meses} meses")
+                        print(f"  Cuota mensual: ${cuota_calculada:,.2f}")
+                        if cuota_calculada < mejor_cuota:
+                            mejor_cuota = cuota_calculada
+                            mejor_banco = banco
+                    else:
+                        print(f"  ❌ No cumples con la capacidad de pago. La cuota de ${cuota_calculada:,.2f} supera tu disponible mensual de ${disponible_para_cuotas:,.2f}")
+                    
+                    print("-" * 40)
+            
+            if mejor_banco:
+                print(f"\n✨ La mejor opción es {mejor_banco.title()} con una cuota de ${opciones_disponibles_para_tabla[mejor_banco]['cuota']:,.2f} al mes. ✨")
+                print("=" * 80)
+                banco_seleccionado_para_resumen = mejor_banco
+                tasa_seleccionada = opciones_disponibles_para_tabla[banco_seleccionado_para_resumen]['tasa_anual']
+                plazo_seleccionado = opciones_disponibles_para_tabla[banco_seleccionado_para_resumen]['plazo_meses']
+                cuota_seleccionada = opciones_disponibles_para_tabla[banco_seleccionado_para_resumen]['cuota']
+            else:
+                print("\n😔 Lo sentimos, no se encontraron opciones de crédito que cumplan con sus requisitos y capacidad de pago.")
+                return
+
+        elif opcion_comparacion.lower().startswith('s'):
+            # Lógica de simulación manual
+            print("SIMULACIÓN MANUAL".center(80))
+            print("=" * 80)
+            tasa_input = pedir_float('Ingresa la tasa (ej. 12 para 12%)', 12.0)
+            periodo = input("La tasa que vas a ingresar es 'anual' o 'mensual'? [anual]: ") or 'anual'
+            tipo_tasa = input("La tasa es 'efectiva' o 'nominal'? [efectiva]: ") or 'efectiva'
+            
+            tasa_seleccionada = convertir_tasa(tasa_input, periodo_input=periodo, tipo_tasa=tipo_tasa, periodo_objetivo='anual')
+            plazo_seleccionado = n_periodos
+            cuota_seleccionada = cuota_annuity(loan_amount, convertir_tasa(tasa_seleccionada, 'anual', 'efectiva'), plazo_seleccionado)
+            
+            print(f"\n✅ Simulación manual realizada con una tasa del {tasa_seleccionada*100:.2f}% {periodo} {tipo_tasa}.")
+            print("=" * 80)
+            banco_seleccionado_para_resumen = "Simulación Manual"
+            opciones_disponibles_para_tabla["simulacion_manual"] = {
+                'cuota': cuota_seleccionada,
+                'tasa_anual': tasa_seleccionada,
+                'plazo_meses': plazo_seleccionado
+            }
+        else:
+            print("Opción inválida. Saliendo del programa.")
+            return
+
+        # Resumen general
+        imprimir_resumen(loan_amount, cuota_seleccionada, plazo_seleccionado, convertir_tasa(tasa_seleccionada, 'anual', 'efectiva'), tipo_credito)
+        indicadores = calcular_dti(ingresos, gastos_totales, deudas_totales, cuota_seleccionada)
+        print('INDICADORES DE CAPACIDAD'.center(80, '-'))
+        print(f'Ingreso mensual: {indicadores["ingreso_mensual"]:,.2f}')
+        print(f'Deuda total mensual: {indicadores["deuda_total_mensual"]:,.2f}')
+        print(f'DTI (debt-to-income): {indicadores["dti"]*100:.2f} %')
+        print(f'Disponible mensual: {indicadores["disponible"]:,.2f}')
+        print('-' * 80)
+
+        # Pregunta para la tabla de amortización
+        mostrar_tabla_opcion = input('¿Quieres ver la tabla de amortización para alguna de las opciones? (si/no) [no]: ') or 'no'
+        if mostrar_tabla_opcion.lower().startswith('s'):
+            if opcion_comparacion.lower().startswith('a'):
+                print("\nBancos disponibles para tabla de amortización:")
+                for i, banco in enumerate(opciones_disponibles_para_tabla.keys(), 1):
+                    print(f"{i}. {banco.title()}")
+                
+                banco_elegido_idx = int(input("Elige el número del banco para ver la tabla: ")) - 1
+                bancos_validos = list(opciones_disponibles_para_tabla.keys())
+                
+                if 0 <= banco_elegido_idx < len(bancos_validos):
+                    banco_elegido_nombre = bancos_validos[banco_elegido_idx]
+                    datos_banco = opciones_disponibles_para_tabla[banco_elegido_nombre]
+                    tasa_mensual_elegida = convertir_tasa(datos_banco['tasa_anual'], 'anual', 'efectiva')
+                    plazo_elegido = datos_banco['plazo_meses']
+                    cuota_elegida = datos_banco['cuota']
+                    
+                    tabla = generar_tabla_amortizacion(loan_amount, tasa_mensual_elegida, plazo_elegido, cuota_elegida, fecha_inicio=datetime.today())
+                    mostrar_tabla(tabla)
+                else:
+                    print("Selección inválida. No se mostrará la tabla de amortización.")
+            
+            elif opcion_comparacion.lower().startswith('s'):
+                tabla = generar_tabla_amortizacion(loan_amount, convertir_tasa(tasa_seleccionada, 'anual', 'efectiva'), plazo_seleccionado, cuota_seleccionada, fecha_inicio=datetime.today())
+                mostrar_tabla(tabla)
+
+        print('\nSimulación finalizada.')
+    
+    except KeyboardInterrupt:
+        print("\nEjecución interrumpida por el usuario.")
+    except Exception as e:
+        print("\nHa ocurrido un error:", str(e))
+        print("Por favor, revisa tus entradas y vuelve a intentarlo.")
+
+if __name__ == '__main__':
+    main()
